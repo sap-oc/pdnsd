@@ -392,10 +392,12 @@ static int add_rr(dns_msg_t **ans, size_t *sz, size_t *allocsz,
 		rdlen=dlen;
 		*sz+=dlen;
 	}
-
-	if (udp && *sz>*udp && section==S_ADDITIONAL) /* only add the record if we do not increase the length over 512 */
-		*sz=osz;                              /* (or possibly more if the request used EDNS) in additionals for udp answer. */
-	else {
+	/* not only S_ADDITIONAL, skip everything if it does not fit into the response */
+	if (udp && *sz>*udp /*&& section==S_ADDITIONAL*/) {
+				/* only add the record if we do not increase the length over 512 */
+		*sz=osz;	/* (or possibly more if the request used EDNS) in additionals for udp answer. */
+		*udp=0;		/* this signals that the response is too big for the udp packet */
+	} else {
 		PUTINT16(type,rrht);
 		PUTINT16(C_IN,rrht);
 		PUTINT32(ttl,rrht);
@@ -1419,7 +1421,9 @@ static void *udp_answer_thread(void *data)
 	}
 	pthread_cleanup_push(free, resp);
 	if (rlen>udpmaxrespsize) {
-		rlen=udpmaxrespsize;
+		/* udpmaxrespsize == 0 is the flag for "we did not have enough space for the response */
+		if (udpmaxrespsize)
+			rlen=udpmaxrespsize;
 		resp->hdr.tc=1; /*set truncated bit*/
 	}
 	DEBUG_MSG("Outbound msg len %li, tc=%u, rc=\"%s\"\n",(long)rlen,resp->hdr.tc,get_ename(rcode));
